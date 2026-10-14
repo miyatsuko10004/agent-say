@@ -84,32 +84,65 @@ def speak_macos(text: str, voice: str, rate: str, device_pattern: str):
     # Detached non-blocking execution
     subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+def get_best_default_voice() -> str:
+    """Check available voices and choose O-Ren (Enhanced) > Otoya (Enhanced) > Kyoko (Enhanced) > Kyoko"""
+    try:
+        out = subprocess.check_output(["say", "-v", "?"], text=True, stderr=subprocess.DEVNULL)
+        for preferred in ["O-Ren (Enhanced)", "Otoya (Enhanced)", "Kyoko (Enhanced)", "Kyoko"]:
+            if preferred in out:
+                return preferred
+    except Exception:
+        pass
+    return "Kyoko"
+
 def main():
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "--test":
-            input_text = "音声通知のテストです。正常に動作しています。"
-        elif sys.argv[1] in ("-h", "--help"):
-            print("Usage: agent-say <text> | echo <text> | agent-say")
-            print("Environment variables:")
-            print("  AGENT_VOICE: Voice name (default: Kyoko)")
-            print("  AGENT_VOICE_RATE: Speech rate (default: 210)")
+    voice_override = None
+    args = sys.argv[1:]
+
+    # Parse optional CLI flags
+    filtered_args = []
+    i = 0
+    while i < len(args):
+        if args[i] in ("--voice", "-v") and i + 1 < len(args):
+            voice_override = args[i + 1]
+            i += 2
+        elif args[i] in ("--list-voices", "-l"):
+            subprocess.run(["say", "-v", "?"], stderr=subprocess.DEVNULL)
+            sys.exit(0)
+        elif args[i] in ("-h", "--help"):
+            print("Usage: agent-say [options] <text> | echo <text> | agent-say")
+            print("\nOptions:")
+            print("  -v, --voice <name>     Voice name (e.g. 'O-Ren (Enhanced)', 'Otoya (Enhanced)', 'Kyoko')")
+            print("  -l, --list-voices      List all available system voices")
+            print("  --test                 Run a quick test speech")
+            print("\nEnvironment variables:")
+            print("  AGENT_VOICE: Voice name (default: auto-detected best enhanced voice, e.g. O-Ren (Enhanced))")
+            print("  AGENT_VOICE_RATE: Speech rate (default: 205)")
             print("  AGENT_AUDIO_DEVICE: Output device regex (default: OpenMove|AfterShokz|Shokz)")
             sys.exit(0)
         else:
-            input_text = " ".join(sys.argv[1:])
+            filtered_args.append(args[i])
+            i += 1
+
+    if filtered_args:
+        if filtered_args[0] == "--test":
+            input_text = "音声通知のテストです。正常に動作しています。"
+        else:
+            input_text = " ".join(filtered_args)
     else:
         if not sys.stdin.isatty():
             input_text = sys.stdin.read()
         else:
-            print("Usage: agent-say <text> | echo <text> | agent-say")
+            print("Usage: agent-say [options] <text> | echo <text> | agent-say")
             sys.exit(0)
 
     cleaned = clean_text(input_text)
     if not cleaned:
         sys.exit(0)
 
-    voice = os.environ.get("AGENT_VOICE", "Kyoko")
-    rate = os.environ.get("AGENT_VOICE_RATE", "210")
+    default_voice = get_best_default_voice()
+    voice = voice_override or os.environ.get("AGENT_VOICE", default_voice)
+    rate = os.environ.get("AGENT_VOICE_RATE", "205")
     preferred_device_pattern = os.environ.get("AGENT_AUDIO_DEVICE", r"OpenMove|AfterShokz|Shokz")
 
     speak_macos(cleaned, voice, rate, preferred_device_pattern)
